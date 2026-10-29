@@ -4,6 +4,12 @@
  classes = {};
  objectVersion = 56;
  objects = {
+  B00000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardActivityMonitor.swift; sourceTree = "<group>"; };
+  A00000000000000000000007 = {isa = PBXBuildFile; fileRef = B00000000000000000000007; };
+  B00000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionScene.swift; sourceTree = "<group>"; };
+  A00000000000000000000006 = {isa = PBXBuildFile; fileRef = B00000000000000000000006; };
+  B00000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionController.swift; sourceTree = "<group>"; };
+  A00000000000000000000005 = {isa = PBXBuildFile; fileRef = B00000000000000000000005; };
   A00000000000000000000001 = {isa = PBXBuildFile; fileRef = B00000000000000000000001; };
   A00000000000000000000002 = {isa = PBXBuildFile; fileRef = B00000000000000000000002; };
   A00000000000000000000003 = {isa = PBXBuildFile; fileRef = B00000000000000000000003; };
@@ -13,10 +19,10 @@
   B00000000000000000000004 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pico.app; sourceTree = BUILT_PRODUCTS_DIR; };
   C00000000000000000000001 = {isa = PBXGroup; children = (C00000000000000000000002, C00000000000000000000005); sourceTree = "<group>"; };
   C00000000000000000000002 = {isa = PBXGroup; children = (C00000000000000000000003, C00000000000000000000004); path = Pico; sourceTree = "<group>"; };
-  C00000000000000000000003 = {isa = PBXGroup; children = (B00000000000000000000001, B00000000000000000000002); path = App; sourceTree = "<group>"; };
+  C00000000000000000000003 = {isa = PBXGroup; children = (B00000000000000000000007, B00000000000000000000006, B00000000000000000000005, B00000000000000000000001, B00000000000000000000002); path = App; sourceTree = "<group>"; };
   C00000000000000000000004 = {isa = PBXGroup; children = (B00000000000000000000003); path = Resources; sourceTree = "<group>"; };
   C00000000000000000000005 = {isa = PBXGroup; children = (B00000000000000000000004); name = Products; sourceTree = "<group>"; };
-  D00000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002); runOnlyForDeploymentPostprocessing = 0; };
+  D00000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000007, A00000000000000000000006, A00000000000000000000005, A00000000000000000000001, A00000000000000000000002); runOnlyForDeploymentPostprocessing = 0; };
   D00000000000000000000002 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000003); runOnlyForDeploymentPostprocessing = 0; };
   D00000000000000000000003 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
   E00000000000000000000001 = {isa = PBXNativeTarget; buildConfigurationList = F00000000000000000000002; buildPhases = (D00000000000000000000001, D00000000000000000000003, D00000000000000000000002); buildRules = (); dependencies = (); name = Pico; productName = Pico; productReference = B00000000000000000000004; productType = "com.apple.product-type.application"; };
@@ -25,8 +31,8 @@
   F00000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (F00000000000000000000005, F00000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
   F00000000000000000000003 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 5.0; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; name = Debug; };
   F00000000000000000000004 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 5.0; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; }; name = Release; };
-  F00000000000000000000005 = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Pico; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = app.pico.desktop; PRODUCT_NAME = "$(TARGET_NAME)"; MARKETING_VERSION = 0.1.0; CURRENT_PROJECT_VERSION = 1; }; name = Debug; };
-  F00000000000000000000006 = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Pico; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = app.pico.desktop; PRODUCT_NAME = "$(TARGET_NAME)"; MARKETING_VERSION = 0.1.0; CURRENT_PROJECT_VERSION = 1; }; name = Release; };
+  F00000000000000000000005 = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = NO; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Pico; INFOPLIST_KEY_LSUIElement = YES; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = app.pico.desktop; PRODUCT_NAME = "$(TARGET_NAME)"; MARKETING_VERSION = 0.1.0; CURRENT_PROJECT_VERSION = 1; }; name = Debug; };
+  F00000000000000000000006 = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = NO; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Pico; INFOPLIST_KEY_LSUIElement = YES; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = app.pico.desktop; PRODUCT_NAME = "$(TARGET_NAME)"; MARKETING_VERSION = 0.1.0; CURRENT_PROJECT_VERSION = 1; }; name = Release; };
  };
  rootObject = E00000000000000000000002;
 }
