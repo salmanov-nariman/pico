@@ -1,0 +1,15 @@
+# Local assistant instructions, notes, and reference prompts
+.local/
+.agents/
+.codex/
+AGENTS.md
+SKILL.md
+
+# macOS and Xcode local state
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+.build/
+*.xcarchive
