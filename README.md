@@ -19,7 +19,7 @@ Click the paw icon in the menu bar to open the control panel. Select Rest, Work,
 2. Select **Pico** and **My Mac**.
 3. Press **Command-R**.
 
-Local builds use ad-hoc signing and do not require a development team. Distribution signing and notarization are not configured.
+The current project uses automatic Apple Development signing. Select your own team in Signing & Capabilities, or use Sign to Run Locally for a local preview. Distribution signing and notarization are not configured.
 
 ## Build and run from Terminal
 
@@ -66,7 +66,7 @@ Pico/Resources/Assets.xcassets/  Bundled character atlas and accent color
 
 `DeveloperIdleAtlas` is an AI-generated transparent PNG based on the supplied Developer character reference. It contains two horizontal cells: holding a coffee mug and taking a sip, with the laptop closed. SpriteKit reads each half separately. The previous idle artwork is retained locally as a reference. The full reference sheet is not used as a runtime sprite.
 
-Three manual states are available: Rest (coffee with a closed laptop), Work (typing in response to keyboard activity, with small floating characters from your key presses), and Sleep (a fixed resting pose with localized torso breathing). State changes crossfade over 0.22 seconds. Pause freezes playback; changing the state while paused shows its first frame. Two-frame generated atlases are an initial animation pass and need visual review for alignment and jitter. Walking, speech bubbles, automatic behavior, and timers are not implemented. The window is 200 points square; visible artwork is approximately 180 points across. The small transparent margins also accept dragging.
+Three manual states are available: Rest (coffee with a closed laptop), Work (automatic typing bursts with short thinking pauses), and Sleep (a fixed resting pose with localized torso breathing). State changes crossfade over 0.22 seconds. Pause freezes playback; changing the state while paused shows its first frame. Two-frame generated atlases are an initial animation pass and need visual review for alignment and jitter. Walking, speech bubbles, automatic state selection, and timers are not implemented. The window is 200 points square; visible artwork is approximately 180 points across. The small transparent margins also accept dragging.
 
 Additional atlases: `DeveloperWorkingAtlas` and `DeveloperSleepingAtlas`, each with two equally sized horizontal cells. Sleep uses only its first cell to keep furniture fixed; a small bounded SpriteKit warp moves the central hoodie region instead of scaling or rotating the whole sprite. `SpriteClip` loads catalog images into frames; `CompanionState` defines the selected behavior. This version uses bundled assets only, not user-imported character packages.
 
@@ -77,7 +77,8 @@ Additional atlases: `DeveloperWorkingAtlas` and `DeveloperSleepingAtlas`, each w
 - In Rest, confirm the laptop is closed and Pico occasionally drinks coffee. Check the two poses for distracting jumps.
 - Drag to another location; quit from the paw menu and relaunch to check persistence.
 - Open the paw panel and switch between all three states, including rapid repeated switching. Check that the last selected state wins with no leftover sprite.
-- In Work, watch hand movement and brief floating typed characters. Labels must stop when paused and disappear on a state change.
+- Select Work without typing: hands should start moving immediately, alternating typing bursts and short pauses, with no floating text. No keyboard controls or permission prompts should appear.
+- Pause Work and confirm it freezes; resume and confirm typing continues. Hide/Show and switch Rest → Work → Sleep → Work, including while paused, to check that only the selected animation runs.
 - In Sleep, watch the chair and laptop edges: they should remain fixed while only the hoodie area moves subtly. There should be no whole-image sway.
 - Check 0.5× and 1.5× speeds, Pause/Resume, Hide/Show, and Move to Bottom Right. Changing state while paused should show a still pose.
 - Quit and relaunch to verify state, speed, and position persistence.
@@ -88,27 +89,10 @@ Additional atlases: `DeveloperWorkingAtlas` and `DeveloperSleepingAtlas`, each w
 - Test sleep/wake and, if available, another display and display disconnection.
 - Launch the installed copy, quit Xcode and Terminal, and confirm Pico keeps running.
 
-The floating window stays above normal application windows. System overlays and some exclusive full-screen applications may cover it. The optional keyboard activity feature requires Input Monitoring permission. Screen recording is not required.
+The floating window stays above normal application windows. System overlays and some exclusive full-screen applications may cover it. Animations run independently of keyboard activity. Input Monitoring, Accessibility access, and Screen Recording permission are not required.
 
 There is no automated test target yet. The initial scaffold was built and run by the project owner. The owner has also run the desktop preview and selected the softer-lighting character. The state animation and control panel changes require a fresh owner-run build and visual verification. The assistant has not built or run this version.
 
+## Keyboard privacy
 
-## Optional typing synchronization
-
-Select Work in the panel, then enable “Печатать вместе со мной”. macOS asks for Input Monitoring access. Grant it to Pico in System Settings > Privacy & Security > Input Monitoring, then restart Pico if requested. Development builds using ad-hoc signing may need permission to be granted again after rebuilding. “Проверить доступ” retries the connection; “Проверить анимацию” previews one typing burst without permissions.
-
-Pico uses a passive listen-only event tap. While synchronization is enabled, it reads the first Unicode character of each key-down event and briefly displays it above the laptop. These characters are visible to anyone viewing or recording the screen. No typing history, logs, files, network transmission, or clipboard access are used. Command/Control shortcuts and control/function characters are skipped; Space appears as ␣. Modifier-aware Unicode text supports keyboard layouts such as Russian and English; composed input methods may produce intermediate characters rather than finalized text. At most eight glyphs are visible; fast typing replaces the oldest. Pausing, hiding, disabling synchronization, or changing state clears the visible glyphs. Monitoring stops when disabled, hidden, paused, in Reduce Motion, or outside Work. Secure input fields may suppress events; this is expected. Without permission, Work remains still except for explicit preview clicks.
-
-The development app now builds without App Sandbox to support system-wide keyboard observation. This does not bypass macOS Input Monitoring consent. Existing preferences stored by the previous sandboxed build may reset when switching to this build.
-
-### Verification of the latest changes
-
-- Rest: no table or legs, closed laptop and coffee mug; verify logo placement at normal display size.
-- Sleep: chair and laptop stay fixed; only the hoodie region breathes.
-- Work: no typing while you are idle; key presses in another app trigger short hand movement and brief typed characters. Stopping typing stops the motion after the current short burst.
-- Turn synchronization off, hide Pico, switch modes, and pause: no new key-driven effects should appear. Check permission denial and restart after granting access.
-- The assistant has not built or launched this update; compile and check the behavior locally.
-
-Latest visual check: type `abc АБВ {} ; @` with appropriate layouts and Shift; compare the glyphs. Check Space, Backspace, arrows, Command-C/V, rapid typing, pause and sync off. Preview Animation moves the hands without inventing letters. Secure-input fields may suppress events. Build/run verification is still performed by the owner.
-
-Coffee now uses a relaxed smile and separate animated steam that follows the cup pose. Keyboard connection is checked every two seconds while synchronization is enabled. The panel shows an activity count (no character history) and an explicit reconnect button. Unicode is read at the annotated session event tap. The reported stopped-typing issue is not yet confirmed resolved: use the count to distinguish missing input events from rendering issues. If the count stays zero, retry access for the current Pico build; secure input or a stale macOS permission may prevent delivery. If it increases while the hands stay still, report that distinction. User build and runtime validation are pending.
+Keyboard synchronization is currently removed. Pico does not install keyboard event monitors, read key contents, count presses, or request input permissions. Work uses a local SpriteKit animation with the existing two-frame atlas. It follows playback speed, Pause/Resume, Hide/Show, and macOS Reduce Motion. Previously granted Input Monitoring access is no longer used and can be removed in System Settings; Pico does not change system permissions itself.

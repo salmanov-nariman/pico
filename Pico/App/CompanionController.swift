@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import CoreGraphics
 import SpriteKit
 
 final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
@@ -11,12 +10,6 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var playbackRate: Double = 1
     @Published private(set) var reduceMotion = false
 
-    @Published private(set) var keyboardSyncEnabled = false
-    @Published private(set) var keyboardMessage = "Связь с клавиатурой выключена."
-    @Published private(set) var receivedKeyPresses = 0
-    private var keyboardHealthTimer: Timer?
-    private let keyboardMonitor = KeyboardActivityMonitor()
-
     private let size = NSSize(width: 200, height: 200)
     private let positionKey = "companion.origin"
     private var panel: NSPanel?
@@ -25,19 +18,6 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
 
     override init() {
         super.init()
-        keyboardSyncEnabled = UserDefaults.standard.bool(forKey: "companion.keyboardSync")
-        keyboardMonitor.onPress = { [weak self] glyph in
-            guard let self else { return }
-            self.receivedKeyPresses = (self.receivedKeyPresses + 1) % 1_000_000
-            self.scene?.registerKeystroke(glyph: glyph)
-        }
-        keyboardMonitor.onUnavailable = { [weak self] in
-            DispatchQueue.main.async { [weak self] in self?.refreshKeyboardMonitoring() }
-        }
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(refreshKeyboardMonitoring),
-            name: NSApplication.didBecomeActiveNotification, object: nil
-        )
         selectedState = CompanionState(rawValue: UserDefaults.standard.string(forKey: "companion.state") ?? "") ?? .idle
         let savedRate = UserDefaults.standard.object(forKey: "companion.rate") as? Double ?? 1
         playbackRate = savedRate.isFinite ? min(max(savedRate, 0.5), 1.5) : 1
@@ -61,7 +41,6 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     deinit {
-        keyboardHealthTimer?.invalidate()
         visibilityRefresh?.cancel()
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -73,26 +52,15 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         panel.setFrameOrigin(clamped(panel.frame.origin))
         panel.orderFrontRegardless()
         isVisible = true
-        if keyboardHealthTimer == nil {
-            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-                guard let self, self.keyboardSyncEnabled else { return }
-                self.refreshKeyboardMonitoring()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            keyboardHealthTimer = timer
-        }
         scene?.isPaused = false
-        refreshKeyboardMonitoring()
     }
 
     func toggleVisibility() {
         if isVisible {
             visibilityRefresh?.cancel()
-            scene?.clearTypingEffects()
             panel?.orderOut(nil)
             scene?.isPaused = true
             isVisible = false
-            refreshKeyboardMonitoring()
         } else {
             show()
         }
@@ -109,63 +77,6 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         selectedState = state
         UserDefaults.standard.set(state.rawValue, forKey: "companion.state")
         scene?.setState(state)
-        refreshKeyboardMonitoring()
-    }
-
-    func setKeyboardSync(_ enabled: Bool) {
-        keyboardSyncEnabled = enabled
-        if !enabled { scene?.clearTypingEffects() }
-        UserDefaults.standard.set(enabled, forKey: "companion.keyboardSync")
-        if enabled && !CGPreflightListenEventAccess() {
-            _ = CGRequestListenEventAccess()
-        }
-        refreshKeyboardMonitoring()
-    }
-
-    @objc func refreshKeyboardMonitoring() {
-        guard keyboardSyncEnabled else {
-            keyboardMonitor.stop()
-            keyboardMessage = "Связь с клавиатурой выключена."
-            return
-        }
-        guard CGPreflightListenEventAccess() else {
-            keyboardMonitor.stop()
-            keyboardMessage = "Разреши Pico мониторинг ввода в настройках macOS, затем перезапусти приложение."
-            return
-        }
-        guard selectedState == .working else {
-            keyboardMonitor.stop()
-            keyboardMessage = "Выбери режим «Работа»."
-            return
-        }
-        guard isVisible else {
-            keyboardMonitor.stop()
-            keyboardMessage = "Покажи Pico, чтобы включить реакцию на клавиши."
-            return
-        }
-        guard animationEnabled, !reduceMotion else {
-            keyboardMonitor.stop()
-            keyboardMessage = reduceMotion
-                ? "macOS уменьшает движение: анимация отключена."
-                : "Анимация на паузе. Нажми «Продолжить»."
-            return
-        }
-        keyboardMessage = keyboardMonitor.start()
-            ? "Готов: начни печатать в любом приложении."
-            : "Не удалось подключиться. Проверь разрешение и перезапусти Pico."
-    }
-
-    func reconnectKeyboard() {
-        keyboardMonitor.stop()
-        receivedKeyPresses = 0
-        if keyboardSyncEnabled && !CGPreflightListenEventAccess() {
-            _ = CGRequestListenEventAccess()
-        }
-        refreshKeyboardMonitoring()
-    }
-
-    func previewKeystroke() {
-        scene?.registerKeystroke()
     }
 
     func setPlaybackRate(_ rate: Double) {
@@ -212,7 +123,6 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     @objc private func motionPreferencesChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         scene?.setAnimated(animationEnabled && !reduceMotion)
-        refreshKeyboardMonitoring()
     }
 
     private func createPanel() {

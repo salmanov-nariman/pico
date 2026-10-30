@@ -21,7 +21,7 @@ enum CompanionState: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .idle: return "Закрыл ноутбук и наслаждается кофе."
-        case .working: return "Печатает вместе с тобой — когда ты нажимаешь клавиши."
+        case .working: return "Увлечённо печатает и иногда задумывается."
         case .sleeping: return "Дремлет, положив голову на руки."
         }
     }
@@ -60,10 +60,8 @@ final class CompanionScene: SKScene {
     private var state: CompanionState = .idle
     private var animated = true
     private var playbackRate: Double = 1
-    private let effects = SKNode()
     private let steam = SKNode()
     private var cupRaised = false
-    private var glyphLane = 0
 
     override func didMove(to view: SKView) {
         guard rig.parent == nil else { return }
@@ -76,8 +74,6 @@ final class CompanionScene: SKScene {
         character.size = CGSize(width: 190, height: 190)
         character.anchorPoint = CGPoint(x: 0.5, y: 0)
         rig.addChild(character)
-        effects.zPosition = 5
-        rig.addChild(effects)
         steam.zPosition = 6
         rig.addChild(steam)
         addChild(rig)
@@ -92,7 +88,6 @@ final class CompanionScene: SKScene {
 
     func setAnimated(_ enabled: Bool) {
         animated = enabled
-        if !enabled { clearTypingEffects() }
         rig.speed = enabled ? CGFloat(playbackRate) : 0
     }
 
@@ -109,7 +104,6 @@ final class CompanionScene: SKScene {
         steam.removeAllActions()
         steam.removeAllChildren()
         cupRaised = false
-        effects.removeAllChildren()
 
         if transition, let previousTexture = character.texture {
             let previous = SKSpriteNode(texture: previousTexture, size: character.size)
@@ -146,28 +140,21 @@ final class CompanionScene: SKScene {
                 .setTexture(clip.frames[0])
             ])
         case .working:
-            // Work is event-driven. No autonomous typing loop.
-            return
+            // Use the scene's animation clock, independent of keyboard access.
+            let keystroke = SKAction.sequence([
+                .setTexture(clip.frames[1]), .wait(forDuration: 0.12),
+                .setTexture(clip.frames[0]), .wait(forDuration: 0.14)
+            ])
+            cycle = .sequence([
+                .repeat(keystroke, count: 7),
+                .wait(forDuration: 0.45, withRange: 0.3),
+                .repeat(keystroke, count: 4),
+                .wait(forDuration: 1.1, withRange: 0.6)
+            ])
         case .sleeping:
             cycle = sleepingBreath()
         }
         character.run(.repeatForever(cycle), withKey: "frames")
-    }
-
-    func registerKeystroke(glyph: String? = nil) {
-        guard state == .working, animated, !isPaused,
-              let clip = clips[.working] else { return }
-        if character.action(forKey: "keypress") == nil {
-            character.run(.sequence([
-                .setTexture(clip.frames[1]), .wait(forDuration: 0.09),
-                .setTexture(clip.frames[0]), .wait(forDuration: 0.09)
-            ]), withKey: "keypress")
-        }
-        if let glyph { emitGlyph(glyph) }
-    }
-
-    func clearTypingEffects() {
-        effects.removeAllChildren()
     }
 
     /// Deform only the central sleeve/torso region. Chair, head and laptop stay fixed.
@@ -233,28 +220,4 @@ final class CompanionScene: SKScene {
         wisp.run(.sequence([.group([rise, opacity]), .removeFromParent()]))
     }
 
-    private func emitGlyph(_ glyph: String) {
-        guard state == .working, animated else { return }
-        // Bound visible glyphs, replacing the oldest during fast typing.
-        if effects.children.count >= 8 { effects.children.first?.removeFromParent() }
-        let label = SKLabelNode(fontNamed: "Menlo-Bold")
-        label.text = glyph
-        label.fontSize = 12
-        label.fontColor = SKColor(red: 0.60, green: 0.86, blue: 0.92, alpha: 1)
-        label.horizontalAlignmentMode = .center
-        label.verticalAlignmentMode = .center
-        let offset = CGFloat(glyphLane % 5 - 2) * 7
-        glyphLane = (glyphLane + 1) % 5
-        label.position = CGPoint(x: 20 + offset, y: 48)
-        label.alpha = 0
-        effects.addChild(label)
-        let rise = SKAction.moveBy(x: offset * 0.4, y: 30, duration: 1.05)
-        rise.timingMode = .easeOut
-        let opacity = SKAction.sequence([
-            .fadeAlpha(to: 0.9, duration: 0.12),
-            .wait(forDuration: 0.18),
-            .fadeOut(withDuration: 0.75)
-        ])
-        label.run(.sequence([.group([rise, opacity]), .removeFromParent()]))
-    }
 }

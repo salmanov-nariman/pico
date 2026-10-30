@@ -36,32 +36,6 @@ struct CompanionMenu: View {
                     .frame(height: 30, alignment: .topLeading)
             }
 
-            if controller.selectedState == .working {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Печатать вместе со мной", isOn: Binding(
-                        get: { controller.keyboardSyncEnabled },
-                        set: { controller.setKeyboardSync($0) }
-                    ))
-                    .toggleStyle(.switch)
-                    .font(.subheadline)
-                    Text(controller.keyboardMessage)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Получено нажатий: \(controller.receivedKeyPresses)")
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    Text("Нажатые буквы видны над ноутбуком и исчезают. Они не сохраняются и никуда не отправляются.")
-                        .font(.caption2).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack {
-                        Button("Проверить анимацию") { controller.previewKeystroke() }
-                            .disabled(!controller.animationEnabled || controller.reduceMotion || !controller.isVisible)
-                        if controller.keyboardSyncEnabled {
-                            Button("Переподключить") { controller.reconnectKeyboard() }
-                        }
-                    }.font(.caption)
-                }
-            }
-
             Divider()
 
             VStack(spacing: 10) {
@@ -108,7 +82,6 @@ struct CompanionMenu: View {
         }
         .padding(20)
         .frame(width: 320)
-        .onAppear { controller.refreshKeyboardMonitoring() }
     }
 
     private func stateButton(_ state: CompanionState) -> some View {
