@@ -288,6 +288,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         view.preferredFramesPerSecond = 60
         view.setAccessibilityLabel("Pico desktop companion. Drag to move.")
         view.onDragEnded = { [weak self] in self?.displaysChanged() }
+        view.onClick = { [weak self] in self?.scene?.greet() }
         view.makeContextMenu = { [weak self] in self?.makeContextMenu() }
         let companionScene = CompanionScene(size: size)
         companionScene.setKeyboardSync(keyboardSyncEnabled)
@@ -396,19 +397,45 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
 
 private final class DraggableSpriteView: SKView {
     var onDragEnded: (() -> Void)?
+    var onClick: (() -> Void)?
     var makeContextMenu: (() -> NSMenu?)?
+    private var pressLocation: NSPoint?
+    private var initialOrigin: NSPoint?
+    private var dragging = false
 
     override var acceptsFirstResponder: Bool { false }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        pressLocation = nil
+        initialOrigin = nil
+        dragging = false
         if event.modifierFlags.contains(.control) {
             showContextMenu(with: event)
             return
         }
-        window?.performDrag(with: event)
-        onDragEnded?()
+        pressLocation = NSEvent.mouseLocation
+        initialOrigin = window?.frame.origin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let pressLocation, let initialOrigin else { return }
+        let current = NSEvent.mouseLocation
+        let dx = current.x - pressLocation.x
+        let dy = current.y - pressLocation.y
+        if !dragging, hypot(dx, dy) < 4 { return }
+        dragging = true
+        window?.setFrameOrigin(NSPoint(x: initialOrigin.x + dx, y: initialOrigin.y + dy))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard pressLocation != nil else { return }
+        let wasDragging = dragging
+        pressLocation = nil
+        initialOrigin = nil
+        dragging = false
+        if wasDragging { onDragEnded?() } else { onClick?() }
     }
 
     override func rightMouseDown(with event: NSEvent) {

@@ -57,12 +57,14 @@ final class CompanionScene: SKScene {
     private var character = SKSpriteNode()
     private var outgoing: SKSpriteNode?
     private var clips: [CompanionState: SpriteClip] = [:]
+    private var greetingClip: SpriteClip?
     private var state: CompanionState = .idle
     private var animated = true
     private var keyboardSyncEnabled = true
     private var playbackRate: Double = 1
     private let steam = SKNode()
     private let words = WordBubbleNode()
+    private let greeting = SKNode()
     private lazy var handRest = handPose(near: 0, far: 0)
     private lazy var handFirst = handPose(near: 0.012, far: 0)
     private lazy var handSecond = handPose(near: 0, far: 0.012)
@@ -75,6 +77,7 @@ final class CompanionScene: SKScene {
         for state in CompanionState.allCases {
             clips[state] = SpriteClip(assetName: state.assetName)
         }
+        greetingClip = SpriteClip(assetName: "DeveloperGreetingAtlas")
         rig.position = CGPoint(x: size.width / 2, y: 5)
         character.size = CGSize(width: 190, height: 190)
         character.anchorPoint = CGPoint(x: 0.5, y: 0)
@@ -83,6 +86,9 @@ final class CompanionScene: SKScene {
         words.position = CGPoint(x: 51, y: 65)
         words.zPosition = 10
         rig.addChild(words)
+        greeting.position = CGPoint(x: size.width / 2, y: 181)
+        greeting.zPosition = 20
+        addChild(greeting)
         addChild(rig)
         applyState(transition: false)
     }
@@ -109,13 +115,15 @@ final class CompanionScene: SKScene {
     func registerKeystroke() {
         guard keyboardSyncEnabled, state == .working, animated, !isPaused,
               clips[.working] != nil,
-              character.action(forKey: "keypress") == nil else { return }
+              character.action(forKey: "keypress") == nil,
+              character.action(forKey: "greeting") == nil else { return }
         // Do not queue bursts: the hands settle as soon as typing stops.
         character.run(typingBurst(), withKey: "keypress")
     }
 
     func stopTyping() {
         character.removeAction(forKey: "keypress")
+        character.removeAction(forKey: "greeting")
         if keyboardSyncEnabled, state == .working, let clip = clips[.working] {
             character.texture = clip.frames[0]
             character.warpGeometry = handRest
@@ -128,6 +136,89 @@ final class CompanionScene: SKScene {
     }
 
     func clearWords() { words.clear() }
+
+    func greet() {
+        guard !isPaused, greeting.children.isEmpty,
+              character.action(forKey: "restGreeting") == nil else { return }
+        if state == .sleeping {
+            showSleepReaction()
+            return
+        }
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = state == .working ? "…" : "Привет!"
+        label.fontSize = 12
+        label.fontColor = .white
+        label.verticalAlignmentMode = .center
+        let bubble = SKShapeNode(rectOf: CGSize(width: state == .working ? 40 : 78, height: 24), cornerRadius: 8)
+        bubble.fillColor = SKColor(red: 0.08, green: 0.11, blue: 0.17, alpha: 0.86)
+        bubble.strokeColor = SKColor(white: 1, alpha: 0.15)
+        label.zPosition = 1
+        bubble.addChild(label)
+        greeting.addChild(bubble)
+        // This clock is independent of playback speed and animation pause.
+        // Reduce Motion shows the same message without an animated transition.
+        if animated {
+            bubble.alpha = 0
+            bubble.run(.sequence([.fadeIn(withDuration: 0.12), .wait(forDuration: 1.2),
+                                  .fadeOut(withDuration: 0.2), .removeFromParent()]))
+        } else {
+            bubble.run(.sequence([.wait(forDuration: 1.5), .removeFromParent()]))
+        }
+        guard state == .idle, animated, let greetingClip, let idleClip = clips[.idle] else { return }
+        character.removeAction(forKey: "frames")
+        // Interrupt even a sip: lower the cup and greet with the free hand.
+        moveCup(raised: false)
+        let wave = SKAction.sequence([
+            .setTexture(greetingClip.frames[0]), .wait(forDuration: 0.18),
+            .setTexture(greetingClip.frames[1]), .wait(forDuration: 0.18)
+        ])
+        character.run(.sequence([
+            .repeat(wave, count: 3),
+            .setTexture(idleClip.frames[0]),
+            .run { [weak self] in
+                guard let self, self.state == .idle else { return }
+                self.character.run(.repeatForever(self.coffeeCycle()), withKey: "frames")
+            }
+        ]), withKey: "restGreeting")
+    }
+
+    private func showSleepReaction() {
+        let cloud = SKNode()
+        greeting.addChild(cloud)
+        for index in 0..<3 {
+            let label = SKLabelNode(fontNamed: "Menlo-Bold")
+            label.text = "Z"
+            label.fontSize = CGFloat(11 + index * 3)
+            label.fontColor = SKColor(red: 0.65, green: 0.84, blue: 1, alpha: 1)
+            label.position = CGPoint(x: -16 + CGFloat(index) * 15, y: -24 + CGFloat(index) * 5)
+            cloud.addChild(label)
+            if animated {
+                label.alpha = 0
+                label.run(.sequence([
+                    .wait(forDuration: Double(index) * 0.25),
+                    .group([
+                        .moveBy(x: 5, y: 15, duration: 1.2),
+                        .sequence([.fadeIn(withDuration: 0.2), .wait(forDuration: 0.5), .fadeOut(withDuration: 0.5)])
+                    ])
+                ]))
+            }
+        }
+        cloud.run(.sequence([.wait(forDuration: 1.9), .removeFromParent()]))
+    }
+
+    private func coffeeSip() -> SKAction {
+        guard let clip = clips[.idle] else { return .wait(forDuration: 0) }
+        return .sequence([
+            .run { [weak self] in self?.moveCup(raised: true) },
+            .setTexture(clip.frames[1]), .wait(forDuration: 1.1),
+            .run { [weak self] in self?.moveCup(raised: false) },
+            .setTexture(clip.frames[0])
+        ])
+    }
+
+    private func coffeeCycle() -> SKAction {
+        .sequence([.wait(forDuration: 4.2, withRange: 1.5), coffeeSip()])
+    }
 
     private func typingBurst() -> SKAction {
         guard let first = SKAction.warp(to: handFirst, duration: 0.07),
@@ -189,6 +280,7 @@ final class CompanionScene: SKScene {
         steam.removeAllActions()
         steam.removeAllChildren()
         cupRaised = false
+        greeting.removeAllChildren()
         clearWords()
 
         if transition, previous.parent != nil {
@@ -214,13 +306,7 @@ final class CompanionScene: SKScene {
                 .run { [weak self] in self?.emitSteam() },
                 .wait(forDuration: 0.7)
             ])))
-            cycle = .sequence([
-                .wait(forDuration: 4.2, withRange: 1.5),
-                .run { [weak self] in self?.moveCup(raised: true) },
-                .setTexture(clip.frames[1]), .wait(forDuration: 1.1),
-                .run { [weak self] in self?.moveCup(raised: false) },
-                .setTexture(clip.frames[0])
-            ])
+            cycle = coffeeCycle()
         case .working:
             character.warpGeometry = handRest
             guard !keyboardSyncEnabled else {
