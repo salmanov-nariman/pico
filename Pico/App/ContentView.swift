@@ -25,6 +25,17 @@ struct CompanionMenu: View {
                     .accessibilityHidden(true)
             }
 
+            Picker("Персонаж", selection: Binding(
+                get: { controller.selectedCharacter },
+                set: { controller.selectCharacter($0) }
+            )) {
+                ForEach(CompanionCharacter.allCases) { character in
+                    Text(character.title).tag(character)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Персонаж")
+
             FocusTimerView(timer: controller.focusTimer)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -81,7 +92,7 @@ struct CompanionMenu: View {
                     .toggleStyle(.switch)
                     .font(.subheadline)
                     Text(controller.keyboardSyncEnabled
-                         ? "Двигает руками при нажатии клавиш."
+                         ? "Печатает при нажатии клавиш."
                          : "Печатает самостоятельно, с небольшими паузами.")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

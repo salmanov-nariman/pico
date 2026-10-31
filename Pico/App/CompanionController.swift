@@ -12,6 +12,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var animationEnabled = true
 
     @Published private(set) var selectedState: CompanionState = .idle
+    @Published private(set) var selectedCharacter: CompanionCharacter = .developer
     @Published private(set) var playbackRate: Double = 1
     @Published private(set) var reduceMotion = false
     @Published private(set) var automaticMode = false
@@ -27,6 +28,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var wordConnectionFailed = false
     private let wordMonitor = WordInputMonitor()
     private var wordHealthTimer: Timer?
+    private var wordStatusUpdate: DispatchWorkItem?
 
     private let size = NSSize(width: 200, height: 200)
     private let positionKey = "companion.origin"
@@ -73,6 +75,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
             name: NSWorkspace.willSleepNotification, object: nil
         )
         selectedState = CompanionState(rawValue: UserDefaults.standard.string(forKey: "companion.state") ?? "") ?? .idle
+        selectedCharacter = CompanionCharacter(rawValue: UserDefaults.standard.string(forKey: "companion.character") ?? "") ?? .developer
         let savedRate = UserDefaults.standard.object(forKey: "companion.rate") as? Double ?? 1
         playbackRate = savedRate.isFinite ? min(max(savedRate, 0.5), 1.5) : 1
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -97,6 +100,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     deinit {
         activityTimer?.invalidate()
         wordHealthTimer?.invalidate()
+        wordStatusUpdate?.cancel()
         visibilityRefresh?.cancel()
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -131,6 +135,13 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         animationEnabled.toggle()
         UserDefaults.standard.set(animationEnabled, forKey: "companion.animate")
         motionPreferencesChanged()
+    }
+
+    func selectCharacter(_ character: CompanionCharacter) {
+        guard character != selectedCharacter else { return }
+        selectedCharacter = character
+        UserDefaults.standard.set(character.rawValue, forKey: "companion.character")
+        scene?.setCharacter(character)
     }
 
     func selectState(_ state: CompanionState) {
@@ -260,9 +271,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
             wordHealthTimer?.invalidate()
             wordHealthTimer = nil
             scene?.clearWords()
-            wordStatus = "Показ слов выключен или приостановлен."
-            wordPermissionNeeded = false
-            wordConnectionFailed = false
+            publishWordStatus("Показ слов выключен или приостановлен.")
             return
         }
         if wordHealthTimer == nil {
@@ -273,23 +282,43 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
             wordHealthTimer = timer
             RunLoop.main.add(timer, forMode: .common)
         }
-        wordPermissionNeeded = !wordMonitor.hasPermission
-        wordConnectionFailed = false
-        if wordPermissionNeeded {
+        if !wordMonitor.hasPermission {
             wordMonitor.stop()
             scene?.clearWords()
-            wordStatus = "Для букв нужен доступ к вводу. Движение рук работает и без него."
+            publishWordStatus("Для букв нужен доступ к вводу. Движение рук работает и без него.",
+                              permissionNeeded: true)
         } else if wordMonitor.isSecureInput {
             wordMonitor.stop()
             scene?.clearWords()
-            wordStatus = "Защищённый ввод: показ слов приостановлен."
+            publishWordStatus("Защищённый ввод: показ слов приостановлен.")
         } else if wordMonitor.start() {
-            wordStatus = "Набирай слово; пробел отправит его вверх."
+            publishWordStatus("Набирай слово; пробел отправит его вверх.")
         } else {
             scene?.clearWords()
-            wordConnectionFailed = true
-            wordStatus = "Не удалось включить буквы. Проверь доступ именно для этой копии Pico и перезапусти её."
+            publishWordStatus("Не удалось включить буквы. Проверь доступ именно для этой копии Pico и перезапусти её.",
+                              connectionFailed: true)
         }
+    }
+
+    private func publishWordStatus(_ status: String, permissionNeeded: Bool = false,
+                                   connectionFailed: Bool = false) {
+        // App activation can arrive while MenuBarExtra is updating its views.
+        // Monitoring and privacy changes remain immediate; only UI publication
+        // is deferred. Coalesce refreshes so an older status cannot win.
+        wordStatusUpdate?.cancel()
+        let update = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if self.wordStatus != status { self.wordStatus = status }
+            if self.wordPermissionNeeded != permissionNeeded {
+                self.wordPermissionNeeded = permissionNeeded
+            }
+            if self.wordConnectionFailed != connectionFailed {
+                self.wordConnectionFailed = connectionFailed
+            }
+            self.wordStatusUpdate = nil
+        }
+        wordStatusUpdate = update
+        DispatchQueue.main.async(execute: update)
     }
 
     @objc private func workspaceWillSleep() {
@@ -308,7 +337,6 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         UserDefaults.standard.set(playbackRate, forKey: "companion.rate")
         scene?.setPlaybackRate(playbackRate)
     }
-
     func resetPosition() {
         if panel == nil { createPanel() }
         panel?.setFrameOrigin(defaultOrigin())
@@ -384,6 +412,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         view.onClick = { [weak self] in self?.scene?.greet() }
         view.makeContextMenu = { [weak self] in self?.makeContextMenu() }
         let companionScene = CompanionScene(size: size)
+        companionScene.setCharacter(selectedCharacter)
         companionScene.setKeyboardSync(keyboardSyncEnabled)
         companionScene.setState(selectedState)
         companionScene.setPlaybackRate(playbackRate)

@@ -1,5 +1,23 @@
 import SpriteKit
 
+enum CompanionCharacter: String, CaseIterable, Identifiable {
+    case developer, cat
+
+    var id: String { rawValue }
+    var title: String { self == .developer ? "Программист" : "Кот" }
+    var assetPrefix: String { self == .developer ? "Developer" : "Cat" }
+
+    func assetName(for state: CompanionState) -> String {
+        let suffix: String
+        switch state {
+        case .idle: suffix = "Idle"
+        case .working: suffix = "Working"
+        case .sleeping: suffix = "Sleeping"
+        }
+        return "\(assetPrefix)\(suffix)Atlas"
+    }
+}
+
 enum CompanionState: String, CaseIterable, Identifiable {
     case idle, working, sleeping
 
@@ -23,13 +41,6 @@ enum CompanionState: String, CaseIterable, Identifiable {
         case .idle: return "Закрыл ноутбук и наслаждается кофе."
         case .working: return "Пишет код за своим ноутбуком."
         case .sleeping: return "Дремлет, положив голову на руки."
-        }
-    }
-    var assetName: String {
-        switch self {
-        case .idle: return "DeveloperIdleAtlas"
-        case .working: return "DeveloperWorkingAtlas"
-        case .sleeping: return "DeveloperSleepingAtlas"
         }
     }
 }
@@ -61,6 +72,7 @@ final class CompanionScene: SKScene {
     private var successClip: SpriteClip?
     private var celebration: SKSpriteNode?
     private var state: CompanionState = .idle
+    private var selectedCharacter: CompanionCharacter = .developer
     private var animated = true
     private var keyboardSyncEnabled = true
     private var playbackRate: Double = 1
@@ -77,17 +89,12 @@ final class CompanionScene: SKScene {
         guard rig.parent == nil else { return }
         backgroundColor = .clear
         scaleMode = .resizeFill
-        for state in CompanionState.allCases {
-            clips[state] = SpriteClip(assetName: state.assetName)
-        }
-        greetingClip = SpriteClip(assetName: "DeveloperGreetingAtlas")
-        successClip = SpriteClip(assetName: "DeveloperSuccessAtlas")
+        loadClips()
         rig.position = CGPoint(x: size.width / 2, y: 5)
         character.size = CGSize(width: 190, height: 190)
         character.anchorPoint = CGPoint(x: 0.5, y: 0)
         steam.zPosition = 6
         rig.addChild(steam)
-        words.position = CGPoint(x: 51, y: 65)
         words.zPosition = 10
         rig.addChild(words)
         greeting.position = CGPoint(x: size.width / 2, y: 181)
@@ -98,6 +105,28 @@ final class CompanionScene: SKScene {
         addChild(developerNotice)
         addChild(rig)
         applyState(transition: false)
+    }
+
+    func setCharacter(_ selection: CompanionCharacter) {
+        guard selection != selectedCharacter else { return }
+        selectedCharacter = selection
+        // Selection can be restored before SpriteKit presents the scene.
+        guard rig.parent != nil else { return }
+        clearDeveloperNotice()
+        loadClips()
+        applyState(transition: false)
+    }
+
+    private func loadClips() {
+        for state in CompanionState.allCases {
+            clips[state] = SpriteClip(assetName: selectedCharacter.assetName(for: state))
+        }
+        greetingClip = SpriteClip(assetName: "\(selectedCharacter.assetPrefix)GreetingAtlas")
+        successClip = SpriteClip(assetName: "\(selectedCharacter.assetPrefix)SuccessAtlas")
+        handRest = handPose(near: 0, far: 0)
+        handFirst = handPose(near: 0.012, far: 0)
+        handSecond = handPose(near: 0, far: 0.012)
+        words.position = CGPoint(x: 51, y: selectedCharacter == .cat ? 79 : 65)
     }
 
     func setState(_ newState: CompanionState) {
@@ -302,8 +331,13 @@ final class CompanionScene: SKScene {
     private func handPose(near: Float, far: Float) -> SKWarpGeometryGrid {
         // Concentrate vertices at the hands instead of tessellating the entire
         // sprite into 1,600 quads. Every hand pose uses identical topology.
-        let xs: [Float] = [0, 0.38, 0.475, 0.54, 0.57, 0.5825, 0.625, 1]
-        let ys: [Float] = [0, 0.105, 0.17, 0.2275, 0.235, 0.285, 1]
+        let isCat = selectedCharacter == .cat
+        let xs: [Float] = isCat
+            ? [0, 0.31, 0.42, 0.53, 0.59, 0.65, 1]
+            : [0, 0.38, 0.475, 0.54, 0.57, 0.5825, 0.625, 1]
+        let ys: [Float] = isCat
+            ? [0, 0.15, 0.17, 0.22, 0.235, 0.29, 0.30, 1]
+            : [0, 0.105, 0.17, 0.2275, 0.235, 0.285, 1]
         var source: [SIMD2<Float>] = []
         var destination: [SIMD2<Float>] = []
         func weight(_ x: Float, _ y: Float, left: Float, bottom: Float,
@@ -316,8 +350,11 @@ final class CompanionScene: SKScene {
         }
         for y in ys {
             for x in xs {
-                let nearWeight = weight(x, y, left: 0.38, bottom: 0.105, width: 0.19, height: 0.13)
-                let farWeight = weight(x, y, left: 0.54, bottom: 0.17, width: 0.085, height: 0.115)
+                let nearWeight = weight(x, y, left: isCat ? 0.31 : 0.38,
+                                        bottom: isCat ? 0.15 : 0.105,
+                                        width: isCat ? 0.22 : 0.19, height: isCat ? 0.14 : 0.13)
+                let farWeight = weight(x, y, left: isCat ? 0.53 : 0.54, bottom: 0.17,
+                                       width: isCat ? 0.12 : 0.085, height: isCat ? 0.13 : 0.115)
                 source.append(SIMD2<Float>(x, y))
                 destination.append(SIMD2<Float>(x, y + near * nearWeight + far * farWeight))
             }
@@ -408,8 +445,9 @@ final class CompanionScene: SKScene {
                 source.append(point)
                 // Coordinates refer to the sleeping sprite, measured from bottom left.
                 // Compact support prevents movement in surrounding furniture pixels.
-                let u = (x - 0.20) / 0.28
-                let v = (y - 0.17) / 0.20
+                let isCat = selectedCharacter == .cat
+                let u = (x - (isCat ? 0.12 : 0.20)) / (isCat ? 0.17 : 0.28)
+                let v = (y - (isCat ? 0.24 : 0.17)) / (isCat ? 0.19 : 0.20)
                 var lift: Float = 0
                 if u > 0, u < 1, v > 0, v < 1 {
                     let envelope = sin(u * .pi) * sin(v * .pi)
@@ -447,7 +485,11 @@ final class CompanionScene: SKScene {
         wisp.strokeColor = SKColor(white: 0.9, alpha: 1)
         wisp.lineWidth = 1.1
         wisp.alpha = 0
-        wisp.position = cupRaised ? CGPoint(x: 13, y: 73) : CGPoint(x: 0, y: 52)
+        if selectedCharacter == .cat {
+            wisp.position = cupRaised ? CGPoint(x: 13, y: 106) : CGPoint(x: 9, y: 86)
+        } else {
+            wisp.position = cupRaised ? CGPoint(x: 13, y: 73) : CGPoint(x: 0, y: 52)
+        }
         steam.addChild(wisp)
         let rise = SKAction.moveBy(x: -3, y: 13, duration: 1.7)
         rise.timingMode = .easeOut
