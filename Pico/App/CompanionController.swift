@@ -3,12 +3,22 @@ import Combine
 import SpriteKit
 
 final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
+    let focusTimer = FocusTimer()
     @Published private(set) var isVisible = false
     @Published private(set) var animationEnabled = true
 
     @Published private(set) var selectedState: CompanionState = .idle
     @Published private(set) var playbackRate: Double = 1
     @Published private(set) var reduceMotion = false
+
+    @Published private(set) var keyboardSyncEnabled = true
+    private let keyboardMonitor = KeyboardActivityMonitor()
+    @Published private(set) var wordsEnabled = false
+    @Published private(set) var wordStatus = ""
+    @Published private(set) var wordPermissionNeeded = false
+    @Published private(set) var wordConnectionFailed = false
+    private let wordMonitor = WordInputMonitor()
+    private var wordHealthTimer: Timer?
 
     private let size = NSSize(width: 200, height: 200)
     private let positionKey = "companion.origin"
@@ -18,6 +28,32 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
 
     override init() {
         super.init()
+        focusTimer.onStart = { [weak self] phase in
+            self?.selectState(phase == .focus ? .working : .idle)
+        }
+        focusTimer.onFinish = { [weak self] _ in
+            self?.selectState(.idle)
+        }
+        keyboardSyncEnabled = UserDefaults.standard.object(forKey: "companion.typingFollowsKeyboard") as? Bool ?? true
+        keyboardMonitor.onActivity = { [weak self] in
+            self?.scene?.registerKeystroke()
+        }
+        wordMonitor.onInput = { [weak self] input in
+            guard let self, self.wordsEnabled else { return }
+            self.scene?.receiveWordInput(input)
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(frontApplicationChanged),
+            name: NSWorkspace.didActivateApplicationNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(refreshKeyboardMonitoring),
+            name: NSApplication.didBecomeActiveNotification, object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(workspaceWillSleep),
+            name: NSWorkspace.willSleepNotification, object: nil
+        )
         selectedState = CompanionState(rawValue: UserDefaults.standard.string(forKey: "companion.state") ?? "") ?? .idle
         let savedRate = UserDefaults.standard.object(forKey: "companion.rate") as? Double ?? 1
         playbackRate = savedRate.isFinite ? min(max(savedRate, 0.5), 1.5) : 1
@@ -41,6 +77,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     deinit {
+        wordHealthTimer?.invalidate()
         visibilityRefresh?.cancel()
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -53,6 +90,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         panel.orderFrontRegardless()
         isVisible = true
         scene?.isPaused = false
+        refreshKeyboardMonitoring()
     }
 
     func toggleVisibility() {
@@ -61,6 +99,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
             panel?.orderOut(nil)
             scene?.isPaused = true
             isVisible = false
+            refreshKeyboardMonitoring()
         } else {
             show()
         }
@@ -77,6 +116,100 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         selectedState = state
         UserDefaults.standard.set(state.rawValue, forKey: "companion.state")
         scene?.setState(state)
+        refreshKeyboardMonitoring()
+    }
+
+    func setKeyboardSync(_ enabled: Bool) {
+        keyboardSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "companion.typingFollowsKeyboard")
+        scene?.setKeyboardSync(enabled)
+        refreshKeyboardMonitoring()
+    }
+
+    @objc private func refreshKeyboardMonitoring() {
+        if keyboardSyncEnabled, selectedState == .working,
+           isVisible, animationEnabled, !reduceMotion {
+            keyboardMonitor.start()
+        } else {
+            keyboardMonitor.stop()
+            scene?.stopTyping()
+        }
+        refreshWordMonitoring()
+    }
+
+    func setWordsEnabled(_ enabled: Bool) {
+        wordsEnabled = enabled
+        scene?.clearWords()
+        refreshWordMonitoring()
+    }
+
+    func requestWordPermission() {
+        wordMonitor.requestPermission()
+        openWordPermissionSettings()
+        refreshWordMonitoring()
+    }
+
+    func openWordPermissionSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func revealRunningApp() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    @objc private func frontApplicationChanged() {
+        scene?.clearWords()
+        refreshWordMonitoring()
+    }
+
+    private func refreshWordMonitoring() {
+        guard wordsEnabled, keyboardSyncEnabled, selectedState == .working,
+              isVisible, animationEnabled, !reduceMotion else {
+            wordMonitor.stop()
+            wordHealthTimer?.invalidate()
+            wordHealthTimer = nil
+            scene?.clearWords()
+            wordStatus = "Показ слов выключен или приостановлен."
+            wordPermissionNeeded = false
+            wordConnectionFailed = false
+            return
+        }
+        if wordHealthTimer == nil {
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+                self?.refreshWordMonitoring()
+            }
+            timer.tolerance = 0.1
+            wordHealthTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        wordPermissionNeeded = !wordMonitor.hasPermission
+        wordConnectionFailed = false
+        if wordPermissionNeeded {
+            wordMonitor.stop()
+            scene?.clearWords()
+            wordStatus = "Для букв нужен доступ к вводу. Движение рук работает и без него."
+        } else if wordMonitor.isSecureInput {
+            wordMonitor.stop()
+            scene?.clearWords()
+            wordStatus = "Защищённый ввод: показ слов приостановлен."
+        } else if wordMonitor.start() {
+            wordStatus = "Набирай слово; пробел отправит его вверх."
+        } else {
+            scene?.clearWords()
+            wordConnectionFailed = true
+            wordStatus = "Не удалось включить буквы. Проверь доступ именно для этой копии Pico и перезапусти её."
+        }
+    }
+
+    @objc private func workspaceWillSleep() {
+        keyboardMonitor.stop()
+        scene?.stopTyping()
+        wordMonitor.stop()
+        wordHealthTimer?.invalidate()
+        wordHealthTimer = nil
+        scene?.clearWords()
     }
 
     func setPlaybackRate(_ rate: Double) {
@@ -109,6 +242,9 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
 
     /// Reassert visibility after macOS finishes changing Spaces, without taking focus.
     @objc private func workspaceChanged() {
+        focusTimer.refresh()
+        keyboardMonitor.stop()
+        refreshKeyboardMonitoring()
         visibilityRefresh?.cancel()
         guard isVisible else { return }
         panel?.orderFrontRegardless()
@@ -123,6 +259,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     @objc private func motionPreferencesChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         scene?.setAnimated(animationEnabled && !reduceMotion)
+        refreshKeyboardMonitoring()
     }
 
     private func createPanel() {
@@ -151,7 +288,9 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         view.preferredFramesPerSecond = 60
         view.setAccessibilityLabel("Pico desktop companion. Drag to move.")
         view.onDragEnded = { [weak self] in self?.displaysChanged() }
+        view.makeContextMenu = { [weak self] in self?.makeContextMenu() }
         let companionScene = CompanionScene(size: size)
+        companionScene.setKeyboardSync(keyboardSyncEnabled)
         companionScene.setState(selectedState)
         companionScene.setPlaybackRate(playbackRate)
         companionScene.setAnimated(animationEnabled && !reduceMotion)
@@ -164,6 +303,69 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         let saved = UserDefaults.standard.string(forKey: positionKey).map(NSPointFromString)
         window.setFrameOrigin(clamped(saved ?? defaultOrigin()))
     }
+
+    private func makeContextMenu() -> NSMenu {
+        focusTimer.refresh()
+        let menu = NSMenu(title: "Pico")
+        menu.autoenablesItems = false
+        for state in CompanionState.allCases {
+            let item = NSMenuItem(title: state.title, action: #selector(contextSelectState(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = state.rawValue
+            item.state = selectedState == state ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let timerTitle: String
+        let timerAction: Selector
+        switch focusTimer.status {
+        case .ready:
+            timerTitle = "Начать работу · \(focusTimer.focusMinutes) мин"
+            timerAction = #selector(contextStartTimer)
+        case .running:
+            timerTitle = "Пауза таймера · \(focusTimer.timeLabel)"
+            timerAction = #selector(contextPauseTimer)
+        case .paused:
+            timerTitle = "Продолжить таймер · \(focusTimer.timeLabel)"
+            timerAction = #selector(contextResumeTimer)
+        case .finished:
+            timerTitle = focusTimer.phase == .focus
+                ? "Начать отдых · \(focusTimer.restMinutes) мин"
+                : "Начать работу · \(focusTimer.focusMinutes) мин"
+            timerAction = #selector(contextStartTimer)
+        }
+        let timerItem = NSMenuItem(title: timerTitle, action: timerAction, keyEquivalent: "")
+        timerItem.target = self
+        menu.addItem(timerItem)
+        if focusTimer.status != .ready {
+            let reset = NSMenuItem(title: "Сбросить таймер", action: #selector(contextResetTimer), keyEquivalent: "")
+            reset.target = self
+            menu.addItem(reset)
+        }
+        menu.addItem(.separator())
+        let animation = NSMenuItem(title: animationEnabled ? "Приостановить анимацию" : "Продолжить анимацию",
+                                   action: #selector(contextToggleAnimation), keyEquivalent: "")
+        animation.target = self
+        animation.isEnabled = !reduceMotion
+        menu.addItem(animation)
+        let hide = NSMenuItem(title: "Скрыть Pico", action: #selector(contextHide), keyEquivalent: "")
+        hide.target = self
+        menu.addItem(hide)
+        return menu
+    }
+
+    @objc private func contextSelectState(_ item: NSMenuItem) {
+        guard let rawValue = item.representedObject as? String,
+              let state = CompanionState(rawValue: rawValue) else { return }
+        selectState(state)
+    }
+
+    @objc private func contextStartTimer() { focusTimer.startNext() }
+    @objc private func contextPauseTimer() { focusTimer.pause() }
+    @objc private func contextResumeTimer() { focusTimer.resume() }
+    @objc private func contextResetTimer() { focusTimer.reset() }
+    @objc private func contextToggleAnimation() { toggleAnimation() }
+    @objc private func contextHide() { if isVisible { toggleVisibility() } }
 
     private func defaultOrigin() -> NSPoint {
         guard let frame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame else { return .zero }
@@ -194,14 +396,28 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
 
 private final class DraggableSpriteView: SKView {
     var onDragEnded: (() -> Void)?
+    var makeContextMenu: (() -> NSMenu?)?
 
     override var acceptsFirstResponder: Bool { false }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {
+            showContextMenu(with: event)
+            return
+        }
         window?.performDrag(with: event)
         onDragEnded?()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        showContextMenu(with: event)
+    }
+
+    private func showContextMenu(with event: NSEvent) {
+        guard let menu = makeContextMenu?() else { return }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
     override func resetCursorRects() {

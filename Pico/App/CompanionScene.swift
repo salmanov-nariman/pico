@@ -21,7 +21,7 @@ enum CompanionState: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .idle: return "Закрыл ноутбук и наслаждается кофе."
-        case .working: return "Увлечённо печатает и иногда задумывается."
+        case .working: return "Пишет код за своим ноутбуком."
         case .sleeping: return "Дремлет, положив голову на руки."
         }
     }
@@ -54,13 +54,18 @@ private struct SpriteClip {
 
 final class CompanionScene: SKScene {
     private let rig = SKNode()
-    private let character = SKSpriteNode()
+    private var character = SKSpriteNode()
     private var outgoing: SKSpriteNode?
     private var clips: [CompanionState: SpriteClip] = [:]
     private var state: CompanionState = .idle
     private var animated = true
+    private var keyboardSyncEnabled = true
     private var playbackRate: Double = 1
     private let steam = SKNode()
+    private let words = WordBubbleNode()
+    private lazy var handRest = handPose(near: 0, far: 0)
+    private lazy var handFirst = handPose(near: 0.012, far: 0)
+    private lazy var handSecond = handPose(near: 0, far: 0.012)
     private var cupRaised = false
 
     override func didMove(to view: SKView) {
@@ -73,9 +78,11 @@ final class CompanionScene: SKScene {
         rig.position = CGPoint(x: size.width / 2, y: 5)
         character.size = CGSize(width: 190, height: 190)
         character.anchorPoint = CGPoint(x: 0.5, y: 0)
-        rig.addChild(character)
         steam.zPosition = 6
         rig.addChild(steam)
+        words.position = CGPoint(x: 51, y: 65)
+        words.zPosition = 10
+        rig.addChild(words)
         addChild(rig)
         applyState(transition: false)
     }
@@ -88,7 +95,78 @@ final class CompanionScene: SKScene {
 
     func setAnimated(_ enabled: Bool) {
         animated = enabled
+        if !enabled { stopTyping(); clearWords() }
         rig.speed = enabled ? CGFloat(playbackRate) : 0
+    }
+
+    func setKeyboardSync(_ enabled: Bool) {
+        guard keyboardSyncEnabled != enabled else { return }
+        keyboardSyncEnabled = enabled
+        clearWords()
+        if state == .working { applyState(transition: false) }
+    }
+
+    func registerKeystroke() {
+        guard keyboardSyncEnabled, state == .working, animated, !isPaused,
+              clips[.working] != nil,
+              character.action(forKey: "keypress") == nil else { return }
+        // Do not queue bursts: the hands settle as soon as typing stops.
+        character.run(typingBurst(), withKey: "keypress")
+    }
+
+    func stopTyping() {
+        character.removeAction(forKey: "keypress")
+        if keyboardSyncEnabled, state == .working, let clip = clips[.working] {
+            character.texture = clip.frames[0]
+            character.warpGeometry = handRest
+        }
+    }
+
+    func receiveWordInput(_ input: WordInput) {
+        guard keyboardSyncEnabled, state == .working, animated, !isPaused else { return }
+        words.receive(input)
+    }
+
+    func clearWords() { words.clear() }
+
+    private func typingBurst() -> SKAction {
+        guard let first = SKAction.warp(to: handFirst, duration: 0.07),
+              let firstDown = SKAction.warp(to: handRest, duration: 0.06),
+              let second = SKAction.warp(to: handSecond, duration: 0.07),
+              let rest = SKAction.warp(to: handRest, duration: 0.06) else {
+            return .wait(forDuration: 0.26)
+        }
+        for action in [first, firstDown, second, rest] { action.timingMode = .easeInEaseOut }
+        return .sequence([first, firstDown, second, rest])
+    }
+
+    /// Compact deformation around each hand on the first working texture.
+    /// Keeps the head, chair and laptop outside the moving regions.
+    private func handPose(near: Float, far: Float) -> SKWarpGeometryGrid {
+        // Concentrate vertices at the hands instead of tessellating the entire
+        // sprite into 1,600 quads. Every hand pose uses identical topology.
+        let xs: [Float] = [0, 0.38, 0.475, 0.54, 0.57, 0.5825, 0.625, 1]
+        let ys: [Float] = [0, 0.105, 0.17, 0.2275, 0.235, 0.285, 1]
+        var source: [SIMD2<Float>] = []
+        var destination: [SIMD2<Float>] = []
+        func weight(_ x: Float, _ y: Float, left: Float, bottom: Float,
+                    width: Float, height: Float) -> Float {
+            let u = (x - left) / width
+            let v = (y - bottom) / height
+            guard u > 0, u < 1, v > 0, v < 1 else { return 0 }
+            let envelope = sin(u * .pi) * sin(v * .pi)
+            return envelope * envelope
+        }
+        for y in ys {
+            for x in xs {
+                let nearWeight = weight(x, y, left: 0.38, bottom: 0.105, width: 0.19, height: 0.13)
+                let farWeight = weight(x, y, left: 0.54, bottom: 0.17, width: 0.085, height: 0.115)
+                source.append(SIMD2<Float>(x, y))
+                destination.append(SIMD2<Float>(x, y + near * nearWeight + far * farWeight))
+            }
+        }
+        return SKWarpGeometryGrid(columns: xs.count - 1, rows: ys.count - 1,
+                                  sourcePositions: source, destinationPositions: destination)
     }
 
     func setPlaybackRate(_ rate: Double) {
@@ -101,16 +179,19 @@ final class CompanionScene: SKScene {
         outgoing?.removeFromParent()
         outgoing = nil
         character.removeAllActions()
+        let previous = character
+        // Configure a fresh sprite before attaching it to the rendered tree.
+        // Do not reuse a renderer mesh across unwarped/work/sleep topologies.
+        character = SKSpriteNode()
+        character.size = previous.size
+        character.anchorPoint = previous.anchorPoint
+        character.subdivisionLevels = 0
         steam.removeAllActions()
         steam.removeAllChildren()
         cupRaised = false
+        clearWords()
 
-        if transition, let previousTexture = character.texture {
-            let previous = SKSpriteNode(texture: previousTexture, size: character.size)
-            previous.anchorPoint = character.anchorPoint
-            previous.alpha = character.alpha
-            previous.warpGeometry = character.warpGeometry
-            rig.addChild(previous)
+        if transition, previous.parent != nil {
             outgoing = previous
             let fade = SKAction.fadeOut(withDuration: 0.22)
             fade.timingMode = .easeInEaseOut
@@ -120,6 +201,7 @@ final class CompanionScene: SKScene {
             reveal.timingMode = .easeInEaseOut
             character.run(reveal, withKey: "transition")
         } else {
+            previous.removeFromParent()
             character.alpha = 1
         }
 
@@ -140,11 +222,13 @@ final class CompanionScene: SKScene {
                 .setTexture(clip.frames[0])
             ])
         case .working:
+            character.warpGeometry = handRest
+            guard !keyboardSyncEnabled else {
+                rig.addChild(character)
+                return
+            }
             // Use the scene's animation clock, independent of keyboard access.
-            let keystroke = SKAction.sequence([
-                .setTexture(clip.frames[1]), .wait(forDuration: 0.12),
-                .setTexture(clip.frames[0]), .wait(forDuration: 0.14)
-            ])
+            let keystroke = typingBurst()
             cycle = .sequence([
                 .repeat(keystroke, count: 7),
                 .wait(forDuration: 0.45, withRange: 0.3),
@@ -154,6 +238,7 @@ final class CompanionScene: SKScene {
         case .sleeping:
             cycle = sleepingBreath()
         }
+        rig.addChild(character)
         character.run(.repeatForever(cycle), withKey: "frames")
     }
 

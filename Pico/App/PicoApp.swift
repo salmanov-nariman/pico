@@ -6,8 +6,10 @@ struct PicoApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        MenuBarExtra("Pico", systemImage: "pawprint.fill") {
+        MenuBarExtra {
             CompanionMenu(controller: delegate.controller)
+        } label: {
+            PicoMenuBarLabel(timer: delegate.controller.focusTimer)
         }
         .menuBarExtraStyle(.window)
     }

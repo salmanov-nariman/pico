@@ -5,6 +5,7 @@ struct CompanionMenu: View {
     @ObservedObject var controller: CompanionController
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 10) {
                 Image(systemName: "pawprint.fill")
@@ -24,6 +25,8 @@ struct CompanionMenu: View {
                     .accessibilityHidden(true)
             }
 
+            FocusTimerView(timer: controller.focusTimer)
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("Настроение").font(.subheadline.weight(.semibold))
                 HStack(spacing: 8) {
@@ -34,6 +37,47 @@ struct CompanionMenu: View {
                 Text(controller.selectedState.subtitle)
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(height: 30, alignment: .topLeading)
+            }
+
+            if controller.selectedState == .working {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Печатать вместе со мной", isOn: Binding(
+                        get: { controller.keyboardSyncEnabled },
+                        set: { controller.setKeyboardSync($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.subheadline)
+                    Text(controller.keyboardSyncEnabled
+                         ? "Двигает руками при нажатии клавиш."
+                         : "Печатает самостоятельно, с небольшими паузами.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if controller.keyboardSyncEnabled {
+                        Toggle("Показывать набранные слова", isOn: Binding(
+                            get: { controller.wordsEnabled },
+                            set: { controller.setWordsEnabled($0) }
+                        ))
+                        .toggleStyle(.switch)
+                        .font(.subheadline)
+                        Text("Слова видны всем, кто смотрит на экран. История не сохраняется и никуда не отправляется.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if controller.wordsEnabled {
+                            Text(controller.wordStatus)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if controller.wordPermissionNeeded {
+                                Button("Разрешить показ слов") { controller.requestWordPermission() }
+                            }
+                            if controller.wordPermissionNeeded || controller.wordConnectionFailed {
+                                HStack {
+                                    Button("Настройки доступа") { controller.openWordPermissionSettings() }
+                                    Button("Показать эту копию Pico") { controller.revealRunningApp() }
+                                }.font(.caption)
+                            }
+                        }
+                    }
+                }
             }
 
             Divider()
@@ -82,6 +126,10 @@ struct CompanionMenu: View {
         }
         .padding(20)
         .frame(width: 320)
+        }
+        // MenuBarExtra needs a concrete viewport size: a ScrollView only
+        // constrained by maxHeight has no reliable intrinsic window height.
+        .frame(width: 320, height: 560)
     }
 
     private func stateButton(_ state: CompanionState) -> some View {
