@@ -170,8 +170,8 @@ final class CompanionScene: SKScene {
         rig.isHidden = true
         addChild(sprite)
         sprite.run(.sequence([
-            .repeat(.animate(with: successClip.frames, timePerFrame: 0.22), count: 2),
-            .wait(forDuration: 0.3),
+            .setTexture(successClip.frames[0]), .wait(forDuration: 0.18),
+            .setTexture(successClip.frames[1]), .wait(forDuration: 1.4),
             .run { [weak self] in self?.endCelebration() }
         ]))
     }
