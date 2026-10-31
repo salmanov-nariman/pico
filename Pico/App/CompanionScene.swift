@@ -58,6 +58,8 @@ final class CompanionScene: SKScene {
     private var outgoing: SKSpriteNode?
     private var clips: [CompanionState: SpriteClip] = [:]
     private var greetingClip: SpriteClip?
+    private var successClip: SpriteClip?
+    private var celebration: SKSpriteNode?
     private var state: CompanionState = .idle
     private var animated = true
     private var keyboardSyncEnabled = true
@@ -65,6 +67,7 @@ final class CompanionScene: SKScene {
     private let steam = SKNode()
     private let words = WordBubbleNode()
     private let greeting = SKNode()
+    private let developerNotice = SKNode()
     private lazy var handRest = handPose(near: 0, far: 0)
     private lazy var handFirst = handPose(near: 0.012, far: 0)
     private lazy var handSecond = handPose(near: 0, far: 0.012)
@@ -78,6 +81,7 @@ final class CompanionScene: SKScene {
             clips[state] = SpriteClip(assetName: state.assetName)
         }
         greetingClip = SpriteClip(assetName: "DeveloperGreetingAtlas")
+        successClip = SpriteClip(assetName: "DeveloperSuccessAtlas")
         rig.position = CGPoint(x: size.width / 2, y: 5)
         character.size = CGSize(width: 190, height: 190)
         character.anchorPoint = CGPoint(x: 0.5, y: 0)
@@ -89,6 +93,9 @@ final class CompanionScene: SKScene {
         greeting.position = CGPoint(x: size.width / 2, y: 181)
         greeting.zPosition = 20
         addChild(greeting)
+        developerNotice.position = CGPoint(x: size.width / 2, y: 153)
+        developerNotice.zPosition = 30
+        addChild(developerNotice)
         addChild(rig)
         applyState(transition: false)
     }
@@ -101,6 +108,7 @@ final class CompanionScene: SKScene {
 
     func setAnimated(_ enabled: Bool) {
         animated = enabled
+        if !enabled { endCelebration() }
         if !enabled { stopTyping(); clearWords() }
         rig.speed = enabled ? CGFloat(playbackRate) : 0
     }
@@ -137,8 +145,66 @@ final class CompanionScene: SKScene {
 
     func clearWords() { words.clear() }
 
+    func clearDeveloperNotice() {
+        developerNotice.removeAllChildren()
+        endCelebration()
+    }
+
+    private func endCelebration() {
+        celebration?.removeAllActions()
+        celebration?.removeFromParent()
+        celebration = nil
+        rig.isHidden = false
+    }
+
+    private func celebrateSuccess() {
+        guard animated, !isPaused, let successClip else { return }
+        endCelebration()
+        greeting.removeAllChildren()
+        let sprite = SKSpriteNode(texture: successClip.frames[0])
+        sprite.size = character.size
+        sprite.anchorPoint = character.anchorPoint
+        sprite.position = rig.position
+        sprite.zPosition = 5
+        celebration = sprite
+        rig.isHidden = true
+        addChild(sprite)
+        sprite.run(.sequence([
+            .repeat(.animate(with: successClip.frames, timePerFrame: 0.22), count: 2),
+            .wait(forDuration: 0.3),
+            .run { [weak self] in self?.endCelebration() }
+        ]))
+    }
+
+    func showDeveloperEvent(_ event: DeveloperEvent) {
+        guard !isPaused else { return }
+        clearDeveloperNotice()
+        if event.isSuccess { celebrateSuccess() }
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = event.title
+        label.fontSize = 12
+        label.verticalAlignmentMode = .center
+        label.fontColor = event.isSuccess ? SKColor(red: 0.65, green: 1, blue: 0.77, alpha: 1)
+            : event.isFailure ? SKColor(red: 1, green: 0.65, blue: 0.63, alpha: 1)
+            : SKColor(red: 0.72, green: 0.9, blue: 1, alpha: 1)
+        if label.frame.width > 170 { label.setScale(170 / label.frame.width) }
+        let bubble = SKShapeNode(rectOf: CGSize(width: label.frame.width + 16, height: 28), cornerRadius: 8)
+        bubble.fillColor = SKColor(white: 0.06, alpha: 0.9)
+        bubble.strokeColor = SKColor(white: 1, alpha: 0.15)
+        label.zPosition = 1
+        bubble.addChild(label)
+        developerNotice.addChild(bubble)
+        if animated {
+            bubble.alpha = 0
+            bubble.run(.sequence([.fadeIn(withDuration: 0.15), .wait(forDuration: 4),
+                                  .fadeOut(withDuration: 0.25), .removeFromParent()]))
+        } else {
+            bubble.run(.sequence([.wait(forDuration: 4), .removeFromParent()]))
+        }
+    }
+
     func greet() {
-        guard !isPaused, greeting.children.isEmpty,
+        guard !isPaused, celebration == nil, greeting.children.isEmpty,
               character.action(forKey: "restGreeting") == nil else { return }
         if state == .sleeping {
             showSleepReaction()
@@ -267,6 +333,7 @@ final class CompanionScene: SKScene {
 
     private func applyState(transition: Bool) {
         guard let clip = clips[state] else { return }
+        endCelebration()
         outgoing?.removeFromParent()
         outgoing = nil
         character.removeAllActions()

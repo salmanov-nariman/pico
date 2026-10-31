@@ -27,6 +27,17 @@ struct CompanionMenu: View {
 
             FocusTimerView(timer: controller.focusTimer)
 
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Реакции на сборки и тесты", isOn: Binding(
+                    get: { controller.developerEventsEnabled },
+                    set: { controller.setDeveloperEventsEnabled($0) }
+                )).toggleStyle(.switch)
+                if controller.developerEventsEnabled {
+                    Text(controller.lastDeveloperEvent ?? "Жду событий от команды Pico.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }.font(.subheadline)
+
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Автоматический режим", isOn: Binding(
                     get: { controller.automaticMode },

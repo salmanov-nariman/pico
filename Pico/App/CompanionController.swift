@@ -5,6 +5,9 @@ import SpriteKit
 
 final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     let focusTimer = FocusTimer()
+    @Published private(set) var developerEventsEnabled = true
+    @Published private(set) var lastDeveloperEvent: String?
+    private let developerEvents = DeveloperEvents()
     @Published private(set) var isVisible = false
     @Published private(set) var animationEnabled = true
 
@@ -33,6 +36,13 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
 
     override init() {
         super.init()
+        developerEventsEnabled = UserDefaults.standard.object(forKey: "companion.developerEvents") as? Bool ?? true
+        developerEvents.onEvent = { [weak self] event in
+            guard let self, self.developerEventsEnabled else { return }
+            self.lastDeveloperEvent = event.title
+            if self.isVisible { self.scene?.showDeveloperEvent(event) }
+        }
+        if developerEventsEnabled { developerEvents.start() }
         focusTimer.onStart = { [weak self] phase in
             self?.applyState(phase == .focus ? .working : .idle)
         }
@@ -106,6 +116,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     func toggleVisibility() {
         if isVisible {
             visibilityRefresh?.cancel()
+            scene?.clearDeveloperNotice()
             panel?.orderOut(nil)
             scene?.isPaused = true
             isVisible = false
@@ -134,6 +145,18 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         UserDefaults.standard.set(state.rawValue, forKey: "companion.state")
         scene?.setState(state)
         refreshKeyboardMonitoring()
+    }
+
+    func setDeveloperEventsEnabled(_ enabled: Bool) {
+        developerEventsEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "companion.developerEvents")
+        if enabled {
+            developerEvents.start()
+        } else {
+            developerEvents.stop()
+            lastDeveloperEvent = nil
+            scene?.clearDeveloperNotice()
+        }
     }
 
     func setAutomaticMode(_ enabled: Bool) {
