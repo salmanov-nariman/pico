@@ -7,8 +7,10 @@ struct FocusTimerChecks {
         let timer = FocusTimer()
         var starts = 0
         var finishes = 0
+        var resets = 0
         timer.onStart = { _ in starts += 1 }
         timer.onFinish = { _ in finishes += 1 }
+        timer.onReset = { resets += 1 }
         timer.startNext()
         let focusDuration = timer.remaining
         precondition(timer.status == .running && timer.phase == .focus)
@@ -30,6 +32,7 @@ struct FocusTimerChecks {
         timer.startNext()
         precondition(timer.phase == .focus && starts == 3)
         timer.reset()
+        precondition(resets == 1, "Reset must dismiss the completion reminder")
         timer.refresh(now: Date().addingTimeInterval(100000))
         precondition(timer.status == .ready && timer.remaining == 0 && finishes == 2)
         print("FocusTimer checks passed")

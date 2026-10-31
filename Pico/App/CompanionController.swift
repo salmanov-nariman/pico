@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import CoreGraphics
 import SpriteKit
+import SwiftUI
 
 final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     let focusTimer = FocusTimer()
@@ -33,6 +34,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     private let size = NSSize(width: 200, height: 200)
     private let positionKey = "companion.origin"
     private var panel: NSPanel?
+    private var controlsPanel: NSPanel?
     private var scene: CompanionScene?
     private var visibilityRefresh: DispatchWorkItem?
 
@@ -46,11 +48,15 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         }
         if developerEventsEnabled { developerEvents.start() }
         focusTimer.onStart = { [weak self] phase in
+            self?.scene?.clearTimerReminder()
             self?.applyState(phase == .focus ? .working : .idle)
         }
-        focusTimer.onFinish = { [weak self] _ in
-            self?.applyState(.idle)
+        focusTimer.onFinish = { [weak self] phase in
+            guard let self else { return }
+            self.applyState(.idle)
+            if self.isVisible { self.scene?.showTimerReminder(after: phase) }
         }
+        focusTimer.onReset = { [weak self] in self?.scene?.clearTimerReminder() }
         automaticMode = UserDefaults.standard.bool(forKey: "companion.automaticMode")
         restAfterMinutes = min(15, max(1, UserDefaults.standard.object(forKey: "companion.restAfter") as? Int ?? 2))
         sleepAfterMinutes = min(60, max(restAfterMinutes + 1, UserDefaults.standard.object(forKey: "companion.sleepAfter") as? Int ?? 10))
@@ -121,6 +127,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         if isVisible {
             visibilityRefresh?.cancel()
             scene?.clearDeveloperNotice()
+            scene?.clearTimerReminder()
             panel?.orderOut(nil)
             scene?.isPaused = true
             isVisible = false
@@ -322,6 +329,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     @objc private func workspaceWillSleep() {
+        scene?.clearTimerReminder()
         activityTimer?.invalidate()
         activityTimer = nil
         keyboardMonitor.stop()
@@ -409,7 +417,14 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         view.preferredFramesPerSecond = 60
         view.setAccessibilityLabel("Pico desktop companion. Drag to move.")
         view.onDragEnded = { [weak self] in self?.displaysChanged() }
-        view.onClick = { [weak self] in self?.scene?.greet() }
+        view.onClick = { [weak self] in
+            guard let self else { return }
+            if self.scene?.consumeTimerReminder() == true {
+                self.showControls()
+            } else {
+                self.scene?.greet()
+            }
+        }
         view.makeContextMenu = { [weak self] in self?.makeContextMenu() }
         let companionScene = CompanionScene(size: size)
         companionScene.setCharacter(selectedCharacter)
@@ -425,6 +440,24 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
 
         let saved = UserDefaults.standard.string(forKey: positionKey).map(NSPointFromString)
         window.setFrameOrigin(clamped(saved ?? defaultOrigin()))
+    }
+
+    private func showControls() {
+        if controlsPanel == nil {
+            let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 560),
+                                 styleMask: [.titled, .closable, .utilityWindow],
+                                 backing: .buffered, defer: false)
+            window.title = "Pico — таймер"
+            window.isReleasedWhenClosed = false
+            window.level = .floating
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            window.contentView = NSHostingView(rootView: CompanionMenu(controller: self))
+            window.center()
+            controlsPanel = window
+        }
+        // Focus changes only after an explicit click, never on timer completion.
+        NSApp.activate(ignoringOtherApps: true)
+        controlsPanel?.makeKeyAndOrderFront(nil)
     }
 
     private func makeContextMenu() -> NSMenu {

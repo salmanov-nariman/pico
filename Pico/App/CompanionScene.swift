@@ -80,6 +80,8 @@ final class CompanionScene: SKScene {
     private let words = WordBubbleNode()
     private let greeting = SKNode()
     private let developerNotice = SKNode()
+    private let timerReminder = SKNode()
+    private var reminderDeadline: Date?
     private lazy var handRest = handPose(near: 0, far: 0)
     private lazy var handFirst = handPose(near: 0.012, far: 0)
     private lazy var handSecond = handPose(near: 0, far: 0.012)
@@ -103,6 +105,9 @@ final class CompanionScene: SKScene {
         developerNotice.position = CGPoint(x: size.width / 2, y: 153)
         developerNotice.zPosition = 30
         addChild(developerNotice)
+        timerReminder.position = CGPoint(x: size.width / 2, y: 175)
+        timerReminder.zPosition = 40
+        addChild(timerReminder)
         addChild(rig)
         applyState(transition: false)
     }
@@ -174,6 +179,53 @@ final class CompanionScene: SKScene {
 
     func clearWords() { words.clear() }
 
+    func clearTimerReminder() {
+        reminderDeadline = nil
+        timerReminder.removeAllActions()
+        timerReminder.removeAllChildren()
+    }
+
+    func consumeTimerReminder() -> Bool {
+        let active = reminderDeadline.map { $0 > Date() } ?? false
+        clearTimerReminder()
+        return active
+    }
+
+    func showTimerReminder(after phase: FocusTimer.Phase) {
+        guard !isPaused else { return }
+        clearTimerReminder()
+        clearDeveloperNotice()
+        greeting.removeAllChildren()
+        reminderDeadline = Date().addingTimeInterval(10)
+        let bubble = SKShapeNode(rectOf: CGSize(width: 188, height: 42), cornerRadius: 10)
+        bubble.fillColor = SKColor(red: 0.08, green: 0.11, blue: 0.17, alpha: 0.96)
+        bubble.strokeColor = SKColor(white: 1, alpha: 0.2)
+        let title = SKLabelNode(fontNamed: "HelveticaNeue-Medium")
+        title.text = phase == .focus ? "Пора размяться ☕" : "Продолжим?"
+        title.fontSize = 14
+        title.fontColor = .white
+        title.verticalAlignmentMode = .center
+        title.position.y = 7
+        let hint = SKLabelNode(fontNamed: "HelveticaNeue")
+        hint.text = "Нажми, чтобы открыть таймер"
+        hint.fontSize = 10
+        hint.fontColor = SKColor(white: 0.8, alpha: 1)
+        hint.verticalAlignmentMode = .center
+        hint.position.y = -10
+        bubble.addChild(title)
+        bubble.addChild(hint)
+        timerReminder.addChild(bubble)
+        if animated {
+            bubble.alpha = 0
+            bubble.run(.sequence([.fadeIn(withDuration: 0.2), .wait(forDuration: 9.5),
+                                  .fadeOut(withDuration: 0.3)]))
+        }
+        // Independent of the character's speed and animation pause.
+        timerReminder.run(.sequence([.wait(forDuration: 10), .run { [weak self] in
+            self?.clearTimerReminder()
+        }]))
+    }
+
     func clearDeveloperNotice() {
         developerNotice.removeAllChildren()
         endCelebration()
@@ -207,6 +259,8 @@ final class CompanionScene: SKScene {
 
     func showDeveloperEvent(_ event: DeveloperEvent) {
         guard !isPaused else { return }
+        // Keep completion reminders readable; event status remains in the menu.
+        if let reminderDeadline, reminderDeadline > Date() { return }
         clearDeveloperNotice()
         if event.isSuccess { celebrateSuccess() }
         let label = SKLabelNode(fontNamed: "Menlo-Bold")

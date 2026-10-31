@@ -1,6 +1,6 @@
 # Pico
 
-A native macOS desktop companion: a little programmer who works, drinks coffee and sleeps beside your windows. Pico reacts to typing, includes a focus timer, and celebrates successful builds and tests. Built with SwiftUI, AppKit and SpriteKit; no backend or third-party dependencies.
+A native macOS desktop companion: choose a little programmer or a cat to work, drink coffee and sleep beside your windows. Pico reacts to typing, includes a focus timer with break reminders, and celebrates successful builds and tests. Built with SwiftUI, AppKit and SpriteKit; no backend or third-party dependencies.
 
 ## Requirements
 

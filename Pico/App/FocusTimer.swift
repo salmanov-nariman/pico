@@ -14,6 +14,7 @@ final class FocusTimer: ObservableObject {
     @Published private(set) var restMinutes: Int
     var onStart: ((Phase) -> Void)?
     var onFinish: ((Phase) -> Void)?
+    var onReset: (() -> Void)?
     private var deadline: Date?
     private var ticker: Timer?
 
@@ -69,6 +70,7 @@ final class FocusTimer: ObservableObject {
         remaining = 0
         phase = .focus
         status = .ready
+        onReset?()
     }
 
     func refresh(now: Date = Date()) {
