@@ -27,6 +27,28 @@ struct CompanionMenu: View {
 
             FocusTimerView(timer: controller.focusTimer)
 
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Автоматический режим", isOn: Binding(
+                    get: { controller.automaticMode },
+                    set: { controller.setAutomaticMode($0) }
+                )).toggleStyle(.switch)
+                if controller.automaticMode {
+                    Stepper("Отдых через \(controller.restAfterMinutes) мин", value: Binding(
+                        get: { controller.restAfterMinutes },
+                        set: { controller.configureAutomaticMode(rest: $0, sleep: controller.sleepAfterMinutes) }
+                    ), in: 1...15)
+                    Stepper("Сон через \(controller.sleepAfterMinutes) мин", value: Binding(
+                        get: { controller.sleepAfterMinutes },
+                        set: { controller.configureAutomaticMode(rest: controller.restAfterMinutes, sleep: $0) }
+                    ), in: (controller.restAfterMinutes + 1)...60)
+                    Text("После бездействия — кофе и сон. Клавиатура или мышь возвращают к работе. Время считается с последнего действия.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Таймер имеет приоритет до сброса. Ручной выбор настроения выключает автоматический режим.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .font(.subheadline)
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("Настроение").font(.subheadline.weight(.semibold))
                 HStack(spacing: 8) {

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreGraphics
 import SpriteKit
 
 final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
@@ -10,6 +11,10 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var selectedState: CompanionState = .idle
     @Published private(set) var playbackRate: Double = 1
     @Published private(set) var reduceMotion = false
+    @Published private(set) var automaticMode = false
+    @Published private(set) var restAfterMinutes = 2
+    @Published private(set) var sleepAfterMinutes = 10
+    private var activityTimer: Timer?
 
     @Published private(set) var keyboardSyncEnabled = true
     private let keyboardMonitor = KeyboardActivityMonitor()
@@ -29,11 +34,14 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     override init() {
         super.init()
         focusTimer.onStart = { [weak self] phase in
-            self?.selectState(phase == .focus ? .working : .idle)
+            self?.applyState(phase == .focus ? .working : .idle)
         }
         focusTimer.onFinish = { [weak self] _ in
-            self?.selectState(.idle)
+            self?.applyState(.idle)
         }
+        automaticMode = UserDefaults.standard.bool(forKey: "companion.automaticMode")
+        restAfterMinutes = min(15, max(1, UserDefaults.standard.object(forKey: "companion.restAfter") as? Int ?? 2))
+        sleepAfterMinutes = min(60, max(restAfterMinutes + 1, UserDefaults.standard.object(forKey: "companion.sleepAfter") as? Int ?? 10))
         keyboardSyncEnabled = UserDefaults.standard.object(forKey: "companion.typingFollowsKeyboard") as? Bool ?? true
         keyboardMonitor.onActivity = { [weak self] in
             self?.scene?.registerKeystroke()
@@ -77,6 +85,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     deinit {
+        activityTimer?.invalidate()
         wordHealthTimer?.invalidate()
         visibilityRefresh?.cancel()
         NotificationCenter.default.removeObserver(self)
@@ -90,6 +99,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
         panel.orderFrontRegardless()
         isVisible = true
         scene?.isPaused = false
+        refreshAutomaticMode()
         refreshKeyboardMonitoring()
     }
 
@@ -99,6 +109,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
             panel?.orderOut(nil)
             scene?.isPaused = true
             isVisible = false
+            refreshAutomaticMode()
             refreshKeyboardMonitoring()
         } else {
             show()
@@ -112,11 +123,66 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     func selectState(_ state: CompanionState) {
+        // A manual choice wins even if the selected state is unchanged.
+        setAutomaticMode(false)
+        applyState(state)
+    }
+
+    private func applyState(_ state: CompanionState) {
         guard state != selectedState else { return }
         selectedState = state
         UserDefaults.standard.set(state.rawValue, forKey: "companion.state")
         scene?.setState(state)
         refreshKeyboardMonitoring()
+    }
+
+    func setAutomaticMode(_ enabled: Bool) {
+        automaticMode = enabled
+        UserDefaults.standard.set(enabled, forKey: "companion.automaticMode")
+        refreshAutomaticMode()
+    }
+
+    func configureAutomaticMode(rest: Int, sleep: Int) {
+        restAfterMinutes = min(15, max(1, rest))
+        sleepAfterMinutes = min(60, max(restAfterMinutes + 1, sleep))
+        UserDefaults.standard.set(restAfterMinutes, forKey: "companion.restAfter")
+        UserDefaults.standard.set(sleepAfterMinutes, forKey: "companion.sleepAfter")
+        updateAutomaticState()
+    }
+
+    private func refreshAutomaticMode() {
+        activityTimer?.invalidate()
+        activityTimer = nil
+        guard automaticMode, isVisible, animationEnabled else { return }
+        updateAutomaticState()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            self?.updateAutomaticState()
+        }
+        timer.tolerance = 0.15
+        activityTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func updateAutomaticState() {
+        // Running, paused and completed timer sessions retain their selected
+        // behavior until reset, so activity cannot erase the break reminder.
+        guard automaticMode, isVisible, animationEnabled else { return }
+        switch focusTimer.status {
+        case .running, .paused:
+            applyState(focusTimer.phase == .focus ? .working : .idle)
+            return
+        case .finished:
+            applyState(.idle)
+            return
+        case .ready: break
+        }
+        let idleSeconds = CGEventSource.secondsSinceLastEventType(
+            .combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!
+        )
+        guard idleSeconds.isFinite, idleSeconds >= 0 else { return }
+        let state: CompanionState = idleSeconds >= Double(sleepAfterMinutes * 60) ? .sleeping
+            : idleSeconds >= Double(restAfterMinutes * 60) ? .idle : .working
+        applyState(state)
     }
 
     func setKeyboardSync(_ enabled: Bool) {
@@ -204,6 +270,8 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     @objc private func workspaceWillSleep() {
+        activityTimer?.invalidate()
+        activityTimer = nil
         keyboardMonitor.stop()
         scene?.stopTyping()
         wordMonitor.stop()
@@ -243,6 +311,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     /// Reassert visibility after macOS finishes changing Spaces, without taking focus.
     @objc private func workspaceChanged() {
         focusTimer.refresh()
+        refreshAutomaticMode()
         keyboardMonitor.stop()
         refreshKeyboardMonitoring()
         visibilityRefresh?.cancel()
@@ -259,6 +328,7 @@ final class CompanionController: NSObject, ObservableObject, NSWindowDelegate {
     @objc private func motionPreferencesChanged() {
         reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         scene?.setAnimated(animationEnabled && !reduceMotion)
+        refreshAutomaticMode()
         refreshKeyboardMonitoring()
     }
 
